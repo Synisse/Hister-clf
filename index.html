@@ -136,12 +136,13 @@
     background:var(--ink);
     box-shadow:0 0 0 6px rgba(0,0,0,.3), 0 0 0 7px rgba(255,255,255,.14);
   }
-  .card.cover .lp{ opacity:1; animation:spin 8s linear infinite; }
+  .card.cover .lp{ opacity:1; }
+  .card.spin .lp{ animation:spin 8s linear infinite; }
   @keyframes spin{
     from{transform:translate(-50%,-50%) rotate(0deg)}
     to{transform:translate(-50%,-50%) rotate(360deg)}
   }
-  @media (prefers-reduced-motion: reduce){ .card.cover .lp{animation:none} }
+  @media (prefers-reduced-motion: reduce){ .card.spin .lp{animation:none} }
   .card .yr{
     position:absolute; left:0; right:0; top:50%; transform:translateY(-50%);
     font-family:"Space Grotesk",sans-serif; font-weight:700;
@@ -289,7 +290,9 @@ function submit(){
     const y = Number(year);
     let idx = row.cards.findIndex(c => (Number(c.year) || 0) > y);
     if(idx === -1) idx = row.cards.length;
-    row.cards.splice(idx, 0, { id:uid(), year, artist, song });
+    const nc = { id:uid(), year, artist, song };
+    row.cards.splice(idx, 0, nc);
+    state.latestId = nc.id;   // only this card spins
   }
   yearI.value=artistI.value=songI.value="";
   save(); render(); yearI.focus();
@@ -336,6 +339,7 @@ function deleteRow(id){
 function cardEl(card){
   const el = document.createElement("div");
   el.className="card"; el.dataset.id=card.id;
+  if(card.id === state.latestId) el.classList.add("spin");
   const [c1,c2] = decadeGrad(card.year);
   const grad = `linear-gradient(130deg, ${c1} 0%, ${c2} 35%, ${c1} 65%, ${c2} 100%)`;
   el.style.backgroundImage = grad;
