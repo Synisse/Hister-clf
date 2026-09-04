@@ -88,7 +88,7 @@
   .row-actions{margin-left:auto;display:flex;gap:8px}
 
   .track{
-    display:flex; gap:10px; flex-wrap:nowrap;
+    display:flex; gap:10px; flex-wrap:nowrap; justify-content:center;
     padding:4px; border-radius:10px;
   }
   .track.drop-hint{background:rgba(255,182,39,.06);outline:2px dashed rgba(255,182,39,.35);outline-offset:-2px}
@@ -112,27 +112,50 @@
   }
   @media (prefers-reduced-motion: reduce){ .card{animation:none} }
   .card:active{cursor:grabbing}
-  /* Album cover shown on hover, replacing the gradient */
-  .card.cover{
-    background-size:cover; background-position:center; animation:none;
-    color:#fff; text-shadow:0 1px 5px rgba(0,0,0,.75);
-  }
+  /* Album art shown as a slowly spinning vinyl LP over the gradient */
+  .card.cover{ color:#fff; text-shadow:0 1px 5px rgba(0,0,0,.75); }
   .card.cover .song{opacity:.95}
   .card.cover .tools button{background:rgba(0,0,0,.4);color:#fff}
+  .lp{
+    position:absolute; top:50%; left:50%;
+    width:82%; aspect-ratio:1; border-radius:50%;
+    transform:translate(-50%,-50%);
+    background-position:center; background-size:cover; background-color:#111;
+    box-shadow:0 5px 16px rgba(0,0,0,.5), inset 0 0 0 2px rgba(0,0,0,.35);
+    opacity:0; transition:opacity .2s ease; z-index:1; pointer-events:none;
+  }
+  .lp::before{ /* record grooves */
+    content:""; position:absolute; inset:0; border-radius:50%;
+    background:repeating-radial-gradient(circle at center,
+      rgba(0,0,0,.28) 0 1px, rgba(0,0,0,0) 1px 4px);
+    mix-blend-mode:multiply; opacity:.55;
+  }
+  .lp::after{ /* center hole */
+    content:""; position:absolute; top:50%; left:50%;
+    width:12%; aspect-ratio:1; transform:translate(-50%,-50%); border-radius:50%;
+    background:var(--ink);
+    box-shadow:0 0 0 6px rgba(0,0,0,.3), 0 0 0 7px rgba(255,255,255,.14);
+  }
+  .card.cover .lp{ opacity:1; animation:spin 8s linear infinite; }
+  @keyframes spin{
+    from{transform:translate(-50%,-50%) rotate(0deg)}
+    to{transform:translate(-50%,-50%) rotate(360deg)}
+  }
+  @media (prefers-reduced-motion: reduce){ .card.cover .lp{animation:none} }
   .card .yr{
     position:absolute; left:0; right:0; top:50%; transform:translateY(-50%);
     font-family:"Space Grotesk",sans-serif; font-weight:700;
     font-size:clamp(15px,27cqi,34px);
     line-height:1; letter-spacing:-.02em; font-variant-numeric:tabular-nums;
-    text-shadow:0 1px 2px rgba(20,18,33,.16); pointer-events:none;
+    text-shadow:0 1px 2px rgba(20,18,33,.16); pointer-events:none; z-index:2;
   }
   .card.cover .yr{text-shadow:0 1px 6px rgba(0,0,0,.8)}
-  .card .artist{font-weight:600;font-size:clamp(9px,10cqi,13px);line-height:1.2;
+  .card .artist{position:relative;z-index:2;font-weight:600;font-size:clamp(9px,10cqi,13px);line-height:1.2;
     overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-  .card .song{font-size:clamp(8px,9cqi,12px);line-height:1.25;opacity:.72;
+  .card .song{position:relative;z-index:2;font-size:clamp(8px,9cqi,12px);line-height:1.25;opacity:.72;
     overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
   .card .tools{
-    position:absolute; top:7px; right:7px; display:flex; gap:4px; opacity:0;
+    position:absolute; top:7px; right:7px; display:flex; gap:4px; opacity:0; z-index:3;
     transition:opacity .12s ease;
   }
   .card:hover .tools, .card:focus-within .tools{opacity:1}
@@ -245,7 +268,7 @@ const submitBtn = $("#submitBtn"), editText = $("#editText");
 
 function firstOpenRow(){
   let r = state.rows.find(r => r.cards.length < MAX);
-  if(!r){ r = { id:uid(), name:"Reihe "+(state.rows.length+1), cards:[] }; state.rows.push(r); }
+  if(!r){ r = { id:uid(), name:"Reihe "+(state.rows.length+1), cards:[] }; state.rows.unshift(r); }
   return r;
 }
 
@@ -301,7 +324,7 @@ function sortRow(row){
   save(); render();
 }
 function addRow(){
-  state.rows.push({ id:uid(), name:"Reihe "+(state.rows.length+1), cards:[] });
+  state.rows.unshift({ id:uid(), name:"Reihe "+(state.rows.length+1), cards:[] });
   save(); render();
 }
 function deleteRow(id){
@@ -321,6 +344,7 @@ function cardEl(card){
   el.style.animationDuration = dur.toFixed(2)+"s";
   el.style.animationDelay = (-(Math.random()*dur)).toFixed(2)+"s"; // random phase → out of sync
   el.innerHTML = `
+    <div class="lp"></div>
     <div class="tools">
       <button title="Bearbeiten" data-act="edit">✎</button>
       <button title="Löschen" data-act="del">✕</button>
@@ -333,35 +357,48 @@ function cardEl(card){
   el.querySelector(".song").textContent = card.song;
   el.querySelector('[data-act="edit"]').onclick = e=>{e.stopPropagation();startEdit(card);};
   el.querySelector('[data-act="del"]').onclick = e=>{e.stopPropagation();deleteCard(card.id);};
-  el.addEventListener("mouseenter", ()=>loadCover(el, card));
-  el.addEventListener("mouseleave", ()=>clearCover(el));
+  applyCover(el, card);
   return el;
 }
 
-// Album covers fetched on hover from the iTunes Search API (no key needed).
+// Album covers from the iTunes Search API (no key needed). Fetched once per song
+// on card create and shown as a vinyl whenever a match is found. Cache stores a
+// promise so re-renders reuse the same lookup.
 const coverCache = new Map();
-async function loadCover(el, card){
-  const key = (card.artist+" "+card.song).toLowerCase();
-  let url = coverCache.get(key);
-  if(url === undefined){
-    coverCache.set(key, null); // avoid duplicate/looping fetches
-    try{
-      const q = encodeURIComponent(card.artist+" "+card.song);
-      const res = await fetch(`https://itunes.apple.com/search?term=${q}&entity=song&limit=1`);
-      const data = await res.json();
-      const art = data.results && data.results[0] && data.results[0].artworkUrl100;
-      url = art ? art.replace("100x100","500x500") : null;
-      coverCache.set(key, url);
-    }catch(e){ url = null; }
+function fetchCover(artist, song){
+  const key = (artist+" "+song).toLowerCase();
+  if(!coverCache.has(key)){
+    coverCache.set(key, (async ()=>{
+      try{
+        const q = encodeURIComponent(artist+" "+song);
+        const res = await fetch(`https://itunes.apple.com/search?term=${q}&media=music&entity=song&limit=1`);
+        if(!res.ok) return null;
+        const data = await res.json();
+        const art = data.results && data.results[0] && data.results[0].artworkUrl100;
+        return art ? art.replace(/\/\d+x\d+bb/, "/600x600bb") : null;
+      }catch(e){ return null; }
+    })());
   }
-  if(url && el.matches(":hover")){
-    el.classList.add("cover");
-    el.style.backgroundImage = `url("${url}")`;
-  }
+  return coverCache.get(key);
 }
-function clearCover(el){
-  el.classList.remove("cover");
-  el.style.backgroundImage = el.dataset.grad || "";
+// Apply the cover to every currently-rendered card matching this song (an id can
+// be re-rendered; querying by song id covers all live instances).
+function paintCover(cardId, url){
+  document.querySelectorAll(`.card[data-id="${cardId}"]`).forEach(el=>{
+    const lp = el.querySelector(".lp");
+    if(!lp) return;
+    lp.style.backgroundImage = `url("${url}")`;
+    lp.style.opacity = "1";          // force visible even if the class rule doesn't match
+    el.classList.add("cover");       // white text + spin animation
+  });
+}
+async function applyCover(el, card){
+  const url = await fetchCover(card.artist, card.song);
+  if(!url) return;
+  paintCover(card.id, url);
+  // also apply directly to the element we were handed, in case it isn't in the DOM yet
+  const lp = el.querySelector(".lp");
+  if(lp){ lp.style.backgroundImage = `url("${url}")`; lp.style.opacity = "1"; el.classList.add("cover"); }
 }
 
 function render(){
