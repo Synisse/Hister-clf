@@ -88,7 +88,7 @@
   .row-actions{margin-left:auto;display:flex;gap:8px}
 
   .track{
-    display:flex; gap:12px; flex-wrap:wrap; min-height:120px;
+    display:flex; gap:12px; flex-wrap:wrap;
     align-content:flex-start; padding:4px; border-radius:10px;
   }
   .track.drop-hint{background:rgba(255,182,39,.06);outline:2px dashed rgba(255,182,39,.35);outline-offset:-2px}
@@ -126,9 +126,16 @@
   .sortable-ghost{opacity:.35}
   .sortable-chosen{box-shadow:0 10px 26px rgba(0,0,0,.5)}
 
-  .empty{
-    width:100%; text-align:center; color:var(--muted); font-size:14px;
-    padding:26px 12px; border:1px dashed var(--line); border-radius:10px;
+  /* Slots: a card box (or placeholder) with a position number below */
+  .slot{display:flex;flex-direction:column;align-items:center;gap:7px;width:132px}
+  .slot-num{
+    font-family:"Space Grotesk"; font-weight:600; font-size:14px;
+    color:var(--muted); font-variant-numeric:tabular-nums; line-height:1;
+  }
+  .slot.filled .slot-num{color:var(--text)}
+  .placeholder{
+    width:132px; min-height:112px; border-radius:12px;
+    border:1.5px dashed var(--line); background:rgba(255,255,255,.014);
   }
 
   footer{margin-top:20px;color:var(--muted);font-size:13px;line-height:1.5}
@@ -319,12 +326,19 @@ function render(){
     head.append(name, count, actions);
 
     const track = document.createElement("div"); track.className="track"; track.dataset.rowId=row.id;
-    if(row.cards.length===0){
-      const e=document.createElement("div"); e.className="empty";
-      e.textContent="Noch keine Karten – oben hinzufügen oder eine Karte hierher ziehen.";
-      track.append(e);
-    } else {
-      row.cards.forEach(c=>track.append(cardEl(c)));
+    for(let i=0;i<MAX;i++){
+      const slot = document.createElement("div"); slot.className="slot";
+      const card = row.cards[i];
+      if(card){
+        slot.classList.add("filled"); slot.dataset.id=card.id;
+        slot.append(cardEl(card));
+      } else {
+        slot.classList.add("empty-slot");
+        const ph=document.createElement("div"); ph.className="placeholder"; slot.append(ph);
+      }
+      const num=document.createElement("div"); num.className="slot-num"; num.textContent=i+1;
+      slot.append(num);
+      track.append(slot);
     }
 
     rowEl.append(head, track);
@@ -332,8 +346,9 @@ function render(){
 
     new Sortable(track,{
       group:{ name:"strang", pull:true, put:(to)=> to.el.querySelectorAll(".card").length < MAX },
+      draggable:".slot.filled",
       animation:150, ghostClass:"sortable-ghost", chosenClass:"sortable-chosen",
-      filter:".empty,.tools,button", preventOnFilter:false,
+      filter:".tools,button", preventOnFilter:false,
       onStart:()=>document.querySelectorAll(".track").forEach(t=>t.classList.add("drop-hint")),
       onEnd:()=>{ document.querySelectorAll(".track").forEach(t=>t.classList.remove("drop-hint")); syncFromDOM(); }
     });
@@ -345,7 +360,7 @@ function syncFromDOM(){
   state.rows.forEach(r=>r.cards.forEach(c=>byId[c.id]=c));
   state.rows.forEach(row=>{
     const track = rowsEl.querySelector(`.track[data-row-id="${row.id}"]`);
-    const ids = [...track.querySelectorAll(".card")].map(el=>el.dataset.id);
+    const ids = [...track.querySelectorAll(".slot.filled")].map(el=>el.dataset.id);
     row.cards = ids.map(id=>byId[id]).filter(Boolean);
   });
   save(); render();
